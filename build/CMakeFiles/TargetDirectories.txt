@@ -1,3 +1,0 @@
-D:/Projects/Graphics/tinyrenderer/build/CMakeFiles/tinyrenderer.dir
-D:/Projects/Graphics/tinyrenderer/build/CMakeFiles/edit_cache.dir
-D:/Projects/Graphics/tinyrenderer/build/CMakeFiles/rebuild_cache.dir
