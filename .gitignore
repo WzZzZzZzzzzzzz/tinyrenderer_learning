@@ -1,1 +1,4 @@
 framebuffer.tga
+.vscode/
+build/
+obj/
