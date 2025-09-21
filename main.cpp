@@ -7,6 +7,9 @@
 #include "tgaimage.h"
 #include "model.h"
 
+constexpr int width  = 128;
+constexpr int height = 128;
+
 constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
 constexpr TGAColor green   = {  0, 255,   0, 255};
 constexpr TGAColor red     = {  0,   0, 255, 255};
@@ -40,25 +43,42 @@ void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, TGAColor color)
     }
 }
 
+void triangle(int ax, int ay, int bx, int by, int cx, int cy, TGAImage &framebuffer, TGAColor color) {
+    if (ay > by) { std::swap(ax, bx); std::swap(ay, by);}
+    if (ay > cy) { std::swap(ax, cx); std::swap(ay, cy);}
+    if (by > cy) { std::swap(bx, cx); std::swap(by, cy);}
+    int total_height = cy - ay;
+
+    if (ay != by) {
+        int segment_hight = by - ay;
+        for (int y = ay; y <= by; y++) {
+            int x1 = ax + ((cx - ax) * (y - ay)) / total_height;
+            int x2 = ax + ((bx - ax) * (y - ay)) / segment_hight;
+            for (int x = std::min(x1, x2); x < std::max(x1, x2); x++)
+                framebuffer.set(x, y, color);
+        }
+    }
+    if (by != cy) {
+        int segment_hight = cy - by;
+        for (int y = by; y <= cy; y++) {
+            int x1 = ax + ((cx - ax) * (y - ay)) / total_height;
+            int x2 = bx + ((cx - bx) * (y - by)) / segment_hight;
+            for (int x = std::min(x1, x2); x < std::max(x1, x2); x++)
+                framebuffer.set(x, y, color);
+        }
+    }
+    // line(ax, ay, bx, by, framebuffer, green);
+    // line(bx, by, cx, cy, framebuffer, green);
+    // line(cx, cy, ax, ay, framebuffer, red);
+}
+
 int main(int argc, char** argv) {
-    constexpr int width  = 800;
-    constexpr int height = 800;
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
     if (argc < 2) {
-
-        int ax =  7, ay =  3;
-        int bx = 12, by = 37;
-        int cx = 62, cy = 53;
-
-        line(ax, ay, bx, by, framebuffer, blue);
-        line(cx, cy, bx, by, framebuffer, green);
-        line(cx, cy, ax, ay, framebuffer, yellow);
-        line(ax, ay, cx, cy, framebuffer, red);
-
-        framebuffer.set(ax, ay, white);
-        framebuffer.set(bx, by, white);
-        framebuffer.set(cx, cy, white);
+        triangle(  7, 45, 35, 100, 45,  60, framebuffer, red);
+        triangle(120, 35, 90,   5, 45, 110, framebuffer, white);
+        triangle(115, 83, 80,  90, 85, 120, framebuffer, green);
 
         framebuffer.write_tga_file("framebuffer.tga");
         std::cout << "no add file" << std::endl;
