@@ -4,6 +4,10 @@
 #include <vector>
 #include <string>
 
+struct Vec3 {
+    int x, y, z;
+};
+
 struct Vec3f {
     float x, y, z;
 };
@@ -16,11 +20,17 @@ public:
     bool load(const std::string& filepath);
 
     const std::vector<Vec3f>& get_vertices() const;
-    const std::vector<std::vector<int>>& get_faces() const;
+    const std::vector<int>& get_faces() const;
+
+    int nverts() const;
+    int nfaces() const;
+
+    Vec3f vert(const int i) const;
+    Vec3f vert(const int iface, const int nthvert) const; 
 
 private:
     std::vector<Vec3f> vertices_;
-    std::vector<std::vector<int>> faces_;
+    std::vector<int> faces_;
 };
 
 #endif

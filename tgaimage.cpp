@@ -199,4 +199,3 @@ int TGAImage::width() const {
 int TGAImage::height() const {
     return h;
 }
-

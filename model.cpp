@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <algorithm>
 
 Model::Model () {
 
@@ -12,7 +13,7 @@ Model::Model (const std::string& filepath) {
     load(filepath);    
 }
 
-bool Model::load(const std::string&filepath) {
+bool Model::load(const std::string& filepath) {
     vertices_.clear();
     faces_.clear();
 
@@ -35,25 +36,46 @@ bool Model::load(const std::string&filepath) {
         }
 
         else if (line_type == "f") {
-            std::vector<int> current_face;
             std::string token;
-            while (ss >> token) {
-                int verrtex_index = std::stoi(token.substr(0, token.find('/')));
-                current_face.push_back(verrtex_index - 1);
+            for (int i = 0; i < 3; i++) {
+                if(!(ss >> token)) { break; }
+                int vertex_index = std::stoi(token.substr(0, token.find('/')));
+                faces_.push_back(vertex_index - 1);
             }
-            faces_.push_back(current_face);
         }
 
     }
     file.close();
-    std::cout << "Loaded " << vertices_.size() << " vertices and " << faces_.size() << " faces." << std::endl;
+    std::cout << "Loaded " << nverts() << " vertices and " << nfaces() << " faces." << std::endl;
+
+    std::vector<int> idx(nfaces());
+    for (int i = 0; i < nfaces(); i++) idx[i] = i;
+
+    std::sort(idx.begin(), idx.end(), [&](const int& a, const int& b) { // given two triangles, compare their min z coordinate
+        float aminz = std::min(vert(a, 0).z, std::min(vert(a, 1).z, vert(a, 2).z));
+        float bminz = std::min(vert(b, 0).z, std::min(vert(b, 1).z, vert(b, 2).z));
+        return aminz < bminz;
+        });
+
+    std::vector<int> facet_vrt2(nfaces()*3);
+    for (int i=0; i<nfaces(); i++)           // for each (new) facet
+        for (int j=0; j<3; j++)              // copy its three vertices from the old array
+            facet_vrt2[i*3+j] = faces_[idx[i]*3+j];
+
+    faces_ = facet_vrt2;  
     return true;
 }
 
-const std::vector<Vec3f>& Model::get_vertices() const {
-    return vertices_;
+const std::vector<Vec3f>& Model::get_vertices() const { return vertices_; }
+const std::vector<int>& Model::get_faces() const { return faces_; }
+
+int Model::nverts() const { return vertices_.size(); }
+int Model::nfaces() const { return faces_.size()/3; }
+
+Vec3f Model::vert(const int i) const {
+    return vertices_[i];
 }
 
-const std::vector<std::vector<int>>& Model::get_faces() const {
-    return faces_;
+Vec3f Model::vert(const int iface, const int nthvert) const {
+    return vertices_[faces_[iface*3+nthvert]];
 }
