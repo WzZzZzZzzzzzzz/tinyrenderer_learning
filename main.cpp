@@ -4,8 +4,10 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <tuple>
 #include "tgaimage.h"
 #include "model.h"
+#include "linalg.h"
 
 constexpr int width  = 1024;
 constexpr int height = 1024;
@@ -78,7 +80,13 @@ void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, in
     }
 }
 
-std::tuple<int, int, int> project(Vec3f v) {
+vec3 rot(vec3 v) {
+    constexpr double a = M_PI / 6;
+    constexpr mat<3,3> Ry = {{{std::cos(a), 0, std::sin(a)}, {0,1,0}, {-std::sin(a), 0, std::cos(a)}}};
+    return Ry * v;
+}
+
+std::tuple<int, int, int> project(vec3 v) {
     return { (v.x + 1.) * width / 2, (v.y + 1.) * height / 2, (v.z + 1.) * 255./2 };
 }
 

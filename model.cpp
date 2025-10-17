@@ -30,7 +30,7 @@ bool Model::load(const std::string& filepath) {
         ss >> line_type;
 
         if (line_type == "v") {
-            float x, y, z;
+            double x, y, z;
             ss >> x >> y >> z;
             vertices_.push_back({x, y, z});
         }
@@ -66,16 +66,16 @@ bool Model::load(const std::string& filepath) {
     return true;
 }
 
-const std::vector<Vec3f>& Model::get_vertices() const { return vertices_; }
+const std::vector<vec3>& Model::get_vertices() const { return vertices_; }
 const std::vector<int>& Model::get_faces() const { return faces_; }
 
 int Model::nverts() const { return vertices_.size(); }
 int Model::nfaces() const { return faces_.size()/3; }
 
-Vec3f Model::vert(const int i) const {
+vec3 Model::vert(const int i) const {
     return vertices_[i];
 }
 
-Vec3f Model::vert(const int iface, const int nthvert) const {
+vec3 Model::vert(const int iface, const int nthvert) const {
     return vertices_[faces_[iface*3+nthvert]];
 }
