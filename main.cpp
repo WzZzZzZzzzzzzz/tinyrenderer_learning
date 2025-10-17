@@ -82,8 +82,13 @@ void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, in
 
 vec3 rot(vec3 v) {
     constexpr double a = M_PI / 6;
-    constexpr mat<3,3> Ry = {{{std::cos(a), 0, std::sin(a)}, {0,1,0}, {-std::sin(a), 0, std::cos(a)}}};
+    mat<3,3> Ry = {{{std::cos(a), 0, std::sin(a)}, {0,1,0}, {-std::sin(a), 0, std::cos(a)}}};
     return Ry * v;
+}
+
+vec3 persp(vec3 v) {
+    constexpr double c = 3.;
+    return v / (1 - v.z / c);
 }
 
 std::tuple<int, int, int> project(vec3 v) {
@@ -121,9 +126,9 @@ int main(int argc, char** argv) {
     std::cout << model.nverts() << " " << model.nfaces() << std::endl;
 
     for(int i = 0; i < model.nfaces(); i++) {
-        auto [ax, ay, az] = project(model.vert(i, 0));
-        auto [bx, by, bz] = project(model.vert(i, 1));
-        auto [cx, cy, cz] = project(model.vert(i, 2));
+        auto [ax, ay, az] = project(persp(rot(model.vert(i, 0))));
+        auto [bx, by, bz] = project(persp(rot(model.vert(i, 1))));
+        auto [cx, cy, cz] = project(persp(rot(model.vert(i, 2))));
 
         // std::cout << ax << " " << ay << std::endl; 
         // std::cout << bx << " " << by << std::endl; 
