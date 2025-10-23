@@ -5,98 +5,43 @@
 #include <fstream>
 #include <string>
 #include <tuple>
+#include <limits>
+#include <algorithm>
 #include "tgaimage.h"
 #include "model.h"
 #include "linalg.h"
+#include "our_gl.h"
 
-constexpr int width  = 1024;
-constexpr int height = 1024;
+// constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
+// constexpr TGAColor black   = {  0,   0,   0, 255}; 
+// constexpr TGAColor green   = {  0, 255,   0, 255};
+// constexpr TGAColor red     = {  0,   0, 255, 255};
+// constexpr TGAColor blue    = {255,   0,   0, 255};
+// constexpr TGAColor yellow  = {  0, 200, 255, 255};
 
-constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
-constexpr TGAColor black   = {  0,   0,   0, 255}; 
-constexpr TGAColor green   = {  0, 255,   0, 255};
-constexpr TGAColor red     = {  0,   0, 255, 255};
-constexpr TGAColor blue    = {255,   0,   0, 255};
-constexpr TGAColor yellow  = {  0, 200, 255, 255};
+extern mat<4,4> ModelView, Perspective;
+extern std::vector<double> zbuffer;
 
-void line(int ax, int ay, int bx, int by, TGAImage &framebuffer, TGAColor color) {
-    bool steep = std::abs(ax - bx) < std::abs(ay - by);
-    if (steep) {
-        std::swap(ax, ay);
-        std::swap(bx, by);
+struct RandomShader : IShader {
+    const Model &model;
+    TGAColor color = {};
+    vec3 tri[3];
+
+    RandomShader (const Model &m) : model(m) { }
+
+    virtual vec4 vertex(const int face, const int vert) {
+        vec3 v = model.vert(face,vert);
+        vec4 gl_Position = ModelView * vec4{v.x, v.y, v.z, 1.};
+        tri[vert] = gl_Position.xyz();
+        return Perspective * gl_Position;
     }
-    if (ax > bx) {
-        std::swap(ax, bx);
-        std::swap(ay, by);
+
+    virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
+        return {false, color};
     }
-    // int y = ay;
-    float ierror = 0;
-    for (int x=ax; x<=bx; x++) {
-        float t = (x-ax) / static_cast<float>(bx-ax);
-        int y = std::round(ay +t * (by - ay));
-        if (steep) 
-            framebuffer.set(y, x, color);
-        else 
-            framebuffer.set(x, y, color);
-        ierror += 2 * std::abs(by - ay);
-        if (ierror > bx - ax) {
-            y += by > ay ? 1 : -1;
-            ierror -= 2 * (bx - ax);
-        }
-    }
-}
-
-double signed_triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
-    return .5 * ((by - ay) * (bx + ax) + (cy - by) * (cx + bx) + (ay - cy) * (ax + cx));
-}
-
-void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, int cz, TGAImage &framebuffer, TGAImage &zbuffer, TGAColor color) {
-    int bbminx = std::min(std::min(ax, bx), cx);
-    int bbminy = std::min(std::min(ay, by), cy);
-    int bbmaxx = std::max(std::max(ax, bx), cx);
-    int bbmaxy = std::max(std::max(ay, by), cy);
-    double total_area = signed_triangle_area(ax, ay, bx, by, cx, cy);
-    if (total_area < 1) return;
-
-#pragma omp parallel for
-    for (int x = bbminx; x <= bbmaxx; x++) {
-        for (int y = bbminy; y <= bbmaxy; y++) {
-            double alpha = signed_triangle_area(x, y, bx, by, cx, cy) / total_area;
-            double beta = signed_triangle_area(x, y, cx, cy, ax, ay) / total_area;
-            double gamma = signed_triangle_area(x, y, ax, ay, bx, by) / total_area;
-            if (alpha < 0 || beta < 0 || gamma < 0) continue;
-            
-            // TGAColor final_color;
-            // final_color.bgra[0] = static_cast<std::uint8_t> (alpha * az.bgra[0] + beta * bz.bgra[0] + gamma * cz.bgra[0]);
-            // final_color.bgra[1] = static_cast<std::uint8_t> (alpha * az.bgra[1] + beta * bz.bgra[1] + gamma * cz.bgra[1]);
-            // final_color.bgra[2] = static_cast<std::uint8_t> (alpha * az.bgra[2] + beta * bz.bgra[2] + gamma * cz.bgra[2]);
-            // framebuffer.set(x, y, final_color);
-
-            unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
-            if (z <= zbuffer.get(x, y)[0]) continue;
-            zbuffer.set(x, y, {z});
-            framebuffer.set(x, y, color);
-        }
-    }
-}
-
-vec3 rot(vec3 v) {
-    constexpr double a = M_PI / 6;
-    mat<3,3> Ry = {{{std::cos(a), 0, std::sin(a)}, {0,1,0}, {-std::sin(a), 0, std::cos(a)}}};
-    return Ry * v;
-}
-
-vec3 persp(vec3 v) {
-    constexpr double c = 3.;
-    return v / (1 - v.z / c);
-}
-
-std::tuple<int, int, int> project(vec3 v) {
-    return { (v.x + 1.) * width / 2, (v.y + 1.) * height / 2, (v.z + 1.) * 255./2 };
-}
+};
 
 int main(int argc, char** argv) {
-    TGAImage framebuffer(width, height, TGAImage::RGB);
 
     if (argc < 2) {
         // int ax = 17, ay =  4;
@@ -112,36 +57,32 @@ int main(int argc, char** argv) {
         std::cout << "no add file" << std::endl;
         return 0;
     }
+    constexpr int width  = 1024;
+    constexpr int height = 1024;
+    constexpr vec3 eye{-1, 0, 2};
+    constexpr vec3 center{0, 0, 0};
+    constexpr vec3 up{0, 1, 0};
 
-    std::string filePath = argv[1];
-    Model model;
-    TGAImage zbuffer(width, height, TGAImage::GRAYSCALE);
+    lookat(eye, center, up);
+    init_perspective(norm(eye - center));
+    init_viewport(width / 16, height / 16, width * 7 / 8, height * 7 / 8);
+    init_zbuffer(width, height);
+    TGAImage framebuffer(width, height, TGAImage::RGB, {177, 195, 209, 255});
+
+    for (int m = 1; m < argc; m++) {
+        Model model(argv[m]);
+        RandomShader shader(model);
+        for (int f = 0; f < model.nfaces(); f++) {
+            shader.color = {static_cast<unsigned char>(std::rand()%255),
+                            static_cast<unsigned char>(std::rand()%255),
+                            static_cast<unsigned char>(std::rand()%255), 255};
+            Triangle clip = {shader.vertex(f, 0),
+                            shader.vertex(f, 1),
+                            shader.vertex(f, 2)};
+            rasterize(clip, shader, framebuffer);            
+        }
+    }
     
-    if (!model.load(argv[1])) {
-        std::cerr << "Error: Failed to load model." << std::endl;
-        return 1;
-    }
-
-    std::cout << "Successfully opened file: " << filePath << std::endl;
-    std::cout << model.nverts() << " " << model.nfaces() << std::endl;
-
-    for(int i = 0; i < model.nfaces(); i++) {
-        auto [ax, ay, az] = project(persp(rot(model.vert(i, 0))));
-        auto [bx, by, bz] = project(persp(rot(model.vert(i, 1))));
-        auto [cx, cy, cz] = project(persp(rot(model.vert(i, 2))));
-
-        // std::cout << ax << " " << ay << std::endl; 
-        // std::cout << bx << " " << by << std::endl; 
-        // std::cout << cx << " " << cy << std::endl; 
-
-        TGAColor rnd;
-        for (int c = 0; c < 3; c++) rnd[c] = std::rand()%255;
-            
-        triangle(ax, ay, az, bx, by, bz, cx, cy, cz, framebuffer, zbuffer, rnd);
-        
-    }
     framebuffer.write_tga_file("framebuffer.tga");
-    zbuffer.write_tga_file("zbuffer.tga");
-
     return 0;
 }
