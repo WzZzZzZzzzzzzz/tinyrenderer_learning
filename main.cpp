@@ -26,6 +26,7 @@ struct RandomShader : IShader {
     const Model &model;
     vec3 l;
     vec3 tri[3];
+    vec3 varying_nrm[3];
 
     RandomShader (const vec3 light, const Model &m) : model(m) {
         l = normalized((ModelView * vec4{light.x, light.y, light.z, 0.}).xyz());
@@ -33,6 +34,8 @@ struct RandomShader : IShader {
 
     virtual vec4 vertex(const int face, const int vert) {
         vec3 v = model.vert(face,vert);
+        vec3 n = model.normal(face, vert);
+        varying_nrm[vert] = (ModelView.invert_transpose() * vec4{n.x, n.y, n.z, 0.}).xyz();
         vec4 gl_Position = ModelView * vec4{v.x, v.y, v.z, 1.};
         tri[vert] = gl_Position.xyz();
         return Perspective * gl_Position;
@@ -40,7 +43,10 @@ struct RandomShader : IShader {
 
     virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
         TGAColor gl_FragColor = {255, 255, 255, 255};
-        vec3 n = normalized(cross(tri[1] - tri[0], tri[2] - tri[0]));
+        // vec3 n = normalized(cross(tri[1] - tri[0], tri[2] - tri[0]));
+        vec3 n = normalized(varying_nrm[0] * bar[0] + 
+                            varying_nrm[1] * bar[1] + 
+                            varying_nrm[2] * bar[2]);
         vec3 r = normalized(n * (n * l) * 2 - l);
         double ambient = .3;
         double diff = std::max(0., n * l);
