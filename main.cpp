@@ -1,53 +1,36 @@
 #include <cmath>
-#include <cstdlib>
-#include <ctime>
 #include <iostream>
-#include <fstream>
 #include <string>
-#include <tuple>
-#include <limits>
 #include <algorithm>
 #include "tgaimage.h"
 #include "model.h"
 #include "linalg.h"
 #include "our_gl.h"
 
-// constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
-// constexpr TGAColor black   = {  0,   0,   0, 255}; 
-// constexpr TGAColor green   = {  0, 255,   0, 255};
-// constexpr TGAColor red     = {  0,   0, 255, 255};
-// constexpr TGAColor blue    = {255,   0,   0, 255};
-// constexpr TGAColor yellow  = {  0, 200, 255, 255};
-
 extern mat<4,4> ModelView, Perspective;
 extern std::vector<double> zbuffer;
 
 struct RandomShader : IShader {
     const Model &model;
-    vec3 l;
-    vec3 tri[3];
-    vec3 varying_nrm[3];
+    vec4 l;
+    vec2 varying_uv[3];
 
     RandomShader (const vec3 light, const Model &m) : model(m) {
-        l = normalized((ModelView * vec4{light.x, light.y, light.z, 0.}).xyz());
+        l = normalized((ModelView * vec4{light.x, light.y, light.z, 0.}));
     }
 
     virtual vec4 vertex(const int face, const int vert) {
-        vec3 v = model.vert(face,vert);
-        vec3 n = model.normal(face, vert);
-        varying_nrm[vert] = (ModelView.invert_transpose() * vec4{n.x, n.y, n.z, 0.}).xyz();
-        vec4 gl_Position = ModelView * vec4{v.x, v.y, v.z, 1.};
-        tri[vert] = gl_Position.xyz();
+        varying_uv[vert] = model.uv(face,vert);
+        vec4 gl_Position = ModelView * model.vert(face, vert);
         return Perspective * gl_Position;
     }
 
     virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
         TGAColor gl_FragColor = {255, 255, 255, 255};
-        // vec3 n = normalized(cross(tri[1] - tri[0], tri[2] - tri[0]));
-        vec3 n = normalized(varying_nrm[0] * bar[0] + 
-                            varying_nrm[1] * bar[1] + 
-                            varying_nrm[2] * bar[2]);
-        vec3 r = normalized(n * (n * l) * 2 - l);
+        vec2 uv = varying_uv[0] * bar[0] + varying_uv[1] * bar[1] + varying_uv[2] * bar[2];
+        vec4 n = normalized(ModelView.invert_transpose() * model.normal(uv));
+        vec4 r = normalized(n * (n * l) * 2 - l);
+        
         double ambient = .3;
         double diff = std::max(0., n * l);
         double spec = std::pow(std::max(r.z, 0.), 35);
