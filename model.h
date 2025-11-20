@@ -22,6 +22,9 @@ public:
     vec4 normal(const vec2 &uv) const;
     vec2 uv(const int iface, const int nthvert) const;
 
+    const TGAImage& diffuse() const;
+    const TGAImage& specular() const;
+
 private:
     std::vector<vec4> vertices_ = {};
     std::vector<vec4> normals_ = {};
@@ -29,7 +32,9 @@ private:
     std::vector<int> faces_vrt = {};
     std::vector<int> faces_nrm = {};
     std::vector<int> faces_tex = {};
+    TGAImage diffusemap = {};
     TGAImage normalmap = {};
+    TGAImage specularmap = {};
 };
 
 #endif

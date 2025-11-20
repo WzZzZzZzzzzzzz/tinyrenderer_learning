@@ -26,16 +26,16 @@ struct RandomShader : IShader {
     }
 
     virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
-        TGAColor gl_FragColor = {255, 255, 255, 255};
         vec2 uv = varying_uv[0] * bar[0] + varying_uv[1] * bar[1] + varying_uv[2] * bar[2];
         vec4 n = normalized(ModelView.invert_transpose() * model.normal(uv));
         vec4 r = normalized(n * (n * l) * 2 - l);
         
-        double ambient = .3;
-        double diff = std::max(0., n * l);
-        double spec = std::pow(std::max(r.z, 0.), 35);
+        double ambient = .4;
+        double diffuse = 1. * std::max(0., n * l);
+        double specular = (3. * sample2D(model.specular(), uv)[0] / 255.) * std::pow(std::max(r.z, 0.), 35);
+        TGAColor gl_FragColor = sample2D(model.diffuse(), uv);
         for (int channel : {0, 1, 2})
-            gl_FragColor[channel] *= std::min(1., ambient + .4 * diff + .9 * spec);
+            gl_FragColor[channel] = std::min<int>(255, gl_FragColor[channel]*(ambient + diffuse + specular));
         return {false, gl_FragColor};
     }
 };
