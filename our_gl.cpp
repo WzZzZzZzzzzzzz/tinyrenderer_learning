@@ -45,9 +45,15 @@ void rasterize(const Triangle &clip, const IShader &shader, TGAImage &framebuffe
                     {screen[2].x, screen[2].y, 1.}}};
     if (ABC.det() < 1) return;
 
-    auto [bbminx, bbmaxx] = std::minmax({screen[0].x, screen[1].x, screen[2].x});
-    auto [bbminy, bbmaxy] = std::minmax({screen[0].y, screen[1].y, screen[2].y});
+    auto x_bounds = std::minmax({screen[0].x, screen[1].x, screen[2].x});
+    auto y_bounds = std::minmax({screen[0].y, screen[1].y, screen[2].y});
 
+    int bbminx = static_cast<int>(x_bounds.first);
+    int bbmaxx = static_cast<int>(x_bounds.second);
+
+    int bbminy = static_cast<int>(y_bounds.first);
+    int bbmaxy = static_cast<int>(y_bounds.second);
+    
 #pragma omp parallel for
     for (int x = std::max<int>(bbminx, 0); x <= std::min<int>(bbmaxx, framebuffer.width() - 1); x++) {
         for (int y = std::max<int>(bbminy, 0); y <= std::min<int>(bbmaxy, framebuffer.height() - 1); y++) {
