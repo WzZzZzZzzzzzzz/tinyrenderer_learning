@@ -5,7 +5,6 @@
 #include <sstream>
 #include <string>
 #include <iostream>
-#include <algorithm>
 
 Model::Model () {
 

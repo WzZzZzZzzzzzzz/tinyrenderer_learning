@@ -1,14 +1,31 @@
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <algorithm>
+#include <vector>
 #include "tgaimage.h"
 #include "model.h"
 #include "linalg.h"
 #include "our_gl.h"
 
-extern mat<4,4> ModelView, Perspective;
+extern mat<4,4> Viewport, ModelView, Perspective;
 extern std::vector<double> zbuffer;
+
+struct BlankShader : IShader{
+    const Model &model;
+
+    BlankShader(const Model &m) : model(m) {};
+
+    virtual vec4 vertex(const int face, const int vert) {
+        vec4 gl_Position = ModelView * model.vert(face, vert);
+        return Perspective * gl_Position;
+    }
+
+    virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
+        return {false, {255, 255, 255, 255}};
+    }
+};
 
 struct RandomShader : IShader {
     const Model &model;
@@ -51,6 +68,29 @@ struct RandomShader : IShader {
     }
 };
 
+void drop_zbuffer(std::string filename, std::vector<double> &zbuffer, int width, int height) {
+    TGAImage zimg(width, height, TGAImage::GRAYSCALE, {0, 0, 0, 0});
+    double minz = +1000;
+    double maxz = -1000;
+    for(int x = 0; x < width; x++) {
+        for(int y = 0; y < height; y++) {
+            double z = zbuffer[x + y * width];
+            if (z <- 100) continue;
+            minz = std::min(z, minz);
+            maxz = std::max(z, maxz);
+        }
+    }
+    for(int x = 0; x < width; x++) {
+        for(int y = 0; y < height; y++) {
+            double z = zbuffer[x + y * width];
+            if (z <- 100) continue;
+            z = (z - minz) / (maxz - minz) * 255;
+            zimg.set(x, y, {static_cast<uint8_t>(z), 255, 255, 255});
+        }
+    }
+    zimg.write_tga_file(filename);
+}
+
 int main(int argc, char** argv) {
 
     if (argc < 2) {
@@ -69,6 +109,8 @@ int main(int argc, char** argv) {
     }
     constexpr int width  = 1024;
     constexpr int height = 1024;
+    constexpr int shadoww = 10240;
+    constexpr int shadowh = 10240;
     constexpr vec3 light{1, 1, 1};
     constexpr vec3 eye{-1, 0, 2};
     constexpr vec3 center{0, 0, 0};
@@ -92,5 +134,68 @@ int main(int argc, char** argv) {
     }
     
     framebuffer.write_tga_file("framebuffer.tga");
+    drop_zbuffer("zbuffer1.tga", zbuffer, width, height);
+
+    std::vector<bool> mask(width * height, false);
+    std::vector<double> zbuffer_copy = zbuffer;
+    mat<4,4> M = (Viewport * Perspective * ModelView).invert();
+
+    {
+        lookat(light, center, up);
+        init_perspective(norm(eye - center));
+        init_viewport(shadoww / 16, shadowh / 16, shadoww * 7 / 8, shadowh * 7 / 8);
+        init_zbuffer(shadoww, shadowh);
+        TGAImage trash(shadoww, shadowh, TGAImage::RGB, {177, 195, 209, 255});
+        
+        for (int m = 1; m < argc; m++) {
+            Model model(argv[m]);
+            BlankShader shader{model};
+            for (int f = 0; f < model.nfaces(); f++) {
+                Triangle clip = {shader.vertex(f, 0),
+                                shader.vertex(f, 1),
+                                shader.vertex(f, 2)};
+                rasterize(clip, shader, trash);            
+            }
+        }
+        trash.write_tga_file("shadowmap.tga");
+    }
+
+    drop_zbuffer("zbuffer2.tga", zbuffer, shadoww, shadowh);
+    
+    mat<4,4> N = Viewport * Perspective * ModelView;
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            vec4 fragment = M * vec4{static_cast<double>(x), static_cast<double>(y), zbuffer_copy[x + y * width], 1.};
+            vec4 q = N * fragment;
+            vec3 p = q.xyz() / q.w;
+            bool lit  = (fragment.z <- 100 ||
+                        (p.x < 0 || p.x >= shadoww || p.y < 0 || p.y >= shadowh) ||
+                        (p.z > zbuffer[int(p.x) + int(p.y) * shadoww] - .03));
+            mask[x + y *width] = lit;
+        }
+    }
+
+    TGAImage maskimg(width, height, TGAImage::GRAYSCALE);
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            if (mask[x + y * width]) continue;
+            maskimg.set(x, y, {255, 255, 255, 255});
+        }
+    }
+    maskimg.write_tga_file("mask.tga");
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            if (mask[x + y * width]) continue;
+            TGAColor c =  framebuffer.get(x, y);
+            vec3 a = {static_cast<double>(c[0]), static_cast<double>(c[1]), static_cast<double>(c[2])};
+            if (norm(a) < 80) continue;
+            a = normalized(a) * 80;
+            framebuffer.set(x, y, {static_cast<uint8_t>(a[0]), static_cast<uint8_t>(a[1]), static_cast<uint8_t>(a[2]), 255});
+        }
+    }
+    framebuffer.write_tga_file("shadow.tga");
+
     return 0;
 }

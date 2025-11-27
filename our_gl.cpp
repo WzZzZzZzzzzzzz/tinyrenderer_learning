@@ -57,11 +57,13 @@ void rasterize(const Triangle &clip, const IShader &shader, TGAImage &framebuffe
 #pragma omp parallel for
     for (int x = std::max<int>(bbminx, 0); x <= std::min<int>(bbmaxx, framebuffer.width() - 1); x++) {
         for (int y = std::max<int>(bbminy, 0); y <= std::min<int>(bbmaxy, framebuffer.height() - 1); y++) {
-            vec3 bc = ABC.invert_transpose() * vec3{static_cast<double>(x), static_cast<double>(y), 1.};
-            if (bc.x < 0 || bc.y < 0 || bc.z < 0) continue;
-            double z = bc * vec3{ndc[0].z, ndc[1].z, ndc[2].z};
+            vec3 bc_screen = ABC.invert_transpose() * vec3{static_cast<double>(x), static_cast<double>(y), 1.};
+            vec3 bc_clip = {bc_screen.x / clip[0].w, bc_screen.y / clip[1].w, bc_screen.z / clip[2].w};
+            bc_clip = bc_clip / (bc_clip.x + bc_clip.y + bc_clip.z);
+            if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0) continue;
+            double z = bc_screen * vec3{ndc[0].z, ndc[1].z, ndc[2].z};
             if (z <= zbuffer[x + y * framebuffer.width()]) continue;
-            auto [discard, color] = shader.fragment(bc);
+            auto [discard, color] = shader.fragment(bc_clip);
             if (discard) continue;
             zbuffer[x + y * framebuffer.width()] = z;
             framebuffer.set(x, y, color);
