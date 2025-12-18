@@ -1,9 +1,7 @@
+#include <random>
 #include <cmath>
-#include <cstdint>
-#include <iostream>
-#include <string>
 #include <algorithm>
-#include <vector>
+#include <string>
 #include "tgaimage.h"
 #include "model.h"
 #include "linalg.h"
@@ -12,10 +10,10 @@
 extern mat<4,4> Viewport, ModelView, Perspective;
 extern std::vector<double> zbuffer;
 
-struct BlankShader : IShader{
+struct Emptyshader : IShader {
     const Model &model;
 
-    BlankShader(const Model &m) : model(m) {};
+    Emptyshader(const Model &m) : model(m) {}
 
     virtual vec4 vertex(const int face, const int vert) {
         vec4 gl_Position = ModelView * model.vert(face, vert);
@@ -23,47 +21,7 @@ struct BlankShader : IShader{
     }
 
     virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
-        return {false, {255, 255, 255, 255}};
-    }
-};
-
-struct RandomShader : IShader {
-    const Model &model;
-    vec4 l;
-    vec2 varying_uv[3];
-    vec4 varying_nrm[3];
-    vec4 tri[3];
-
-    RandomShader (const vec3 light, const Model &m) : model(m) {
-        l = normalized((ModelView * vec4{light.x, light.y, light.z, 0.}));
-    }
-
-    virtual vec4 vertex(const int face, const int vert) {
-        varying_uv[vert] = model.uv(face,vert);
-        varying_nrm[vert] = ModelView.invert_transpose() * model.normal(face, vert);
-        vec4 gl_Position = ModelView * model.vert(face, vert);
-        tri[vert] = gl_Position;
-        return Perspective * gl_Position;
-    }
-
-    virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
-        mat<2,4> E = {tri[1] - tri[0], tri[2] - tri[0]};
-        mat<2,2> U = {varying_uv[1] - varying_uv[0], varying_uv[2] - varying_uv[0]};
-        mat<2,4> T = U.invert() * E;
-        mat<4,4> D = {normalized(T[0]),
-                    normalized(T[1]),
-                    normalized(varying_nrm[0] * bar[0] + varying_nrm[1] * bar[1] + varying_nrm[2] * bar[2]),
-                    {0, 0, 0, 1}};
-        vec2 uv = varying_uv[0] * bar[0] + varying_uv[1] * bar[1] + varying_uv[2] * bar[2];
-        vec4 n = normalized(D.transpose() * model.normal(uv));
-        vec4 r = normalized(n * (n * l) * 2 - l);
-        
-        double ambient = .4;
-        double diffuse = 1. * std::max(0., n * l);
-        double specular = (3. * sample2D(model.specular(), uv)[0] / 255.) * std::pow(std::max(r.z, 0.), 35);
-        TGAColor gl_FragColor = sample2D(model.diffuse(), uv);
-        for (int channel : {0, 1, 2})
-            gl_FragColor[channel] = std::min<int>(255, gl_FragColor[channel]*(ambient + diffuse + specular));
+        TGAColor gl_FragColor = {255, 255, 255, 255};
         return {false, gl_FragColor};
     }
 };
@@ -92,29 +50,18 @@ void drop_zbuffer(std::string filename, std::vector<double> &zbuffer, int width,
 }
 
 int main(int argc, char** argv) {
-
     if (argc < 2) {
-        // int ax = 17, ay =  4;
-        // int bx = 55, by = 39;
-        // int cx = 23, cy = 59;
-        // TGAColor az = red, bz = blue, cz = green;
-
-        // triangle(ax, ay, az, bx, by, bz, cx, cy, cz, framebuffer);
-        // triangle(ax * 2 / 3 + bx / 6 + cx / 6, ay * 2 / 3 + by / 6 + cy / 6, black,
-        //          bx * 2 / 3 + ax / 6 + cx / 6, by * 2 / 3 + ay / 6 + cy / 6, black,
-        //          cx * 2 / 3 + bx / 6 + ax / 6, cy * 2 / 3 + by / 6 + ay / 6, black, framebuffer);
-        // framebuffer.write_tga_file("framebuffer.tga");
         std::cout << "no add file" << std::endl;
         return 0;
     }
-    constexpr int width  = 1024;
-    constexpr int height = 1024;
-    constexpr int shadoww = 10240;
-    constexpr int shadowh = 10240;
-    constexpr vec3 light{1, 1, 1};
-    constexpr vec3 eye{-1, 0, 2};
+
+    constexpr int width  = 800;
+    constexpr int height = 800;
+    constexpr int shadoww = 8000;
+    constexpr int shadowh = 8000;
+    constexpr vec3    eye{-1, 0, 2};
     constexpr vec3 center{0, 0, 0};
-    constexpr vec3 up{0, 1, 0};
+    constexpr vec3     up{0, 1, 0};
 
     lookat(eye, center, up);
     init_perspective(norm(eye - center));
@@ -124,7 +71,7 @@ int main(int argc, char** argv) {
 
     for (int m = 1; m < argc; m++) {
         Model model(argv[m]);
-        RandomShader shader(light, model);
+        Emptyshader shader(model);
         for (int f = 0; f < model.nfaces(); f++) {
             Triangle clip = {shader.vertex(f, 0),
                             shader.vertex(f, 1),
@@ -132,16 +79,33 @@ int main(int argc, char** argv) {
             rasterize(clip, shader, framebuffer);            
         }
     }
-    
     framebuffer.write_tga_file("framebuffer.tga");
-    drop_zbuffer("zbuffer1.tga", zbuffer, width, height);
 
-    std::vector<bool> mask(width * height, false);
+    std::vector<double> mask(width * height, 0);
     std::vector<double> zbuffer_copy = zbuffer;
     mat<4,4> M = (Viewport * Perspective * ModelView).invert();
 
-    {
+    std::mt19937 gen(std::random_device{}());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    constexpr int n = 30;
+
+    auto smoothstep = [](double edge0, double edge1, double x) {
+        double  t = std::clamp((x - edge0) / (edge1 - edge0), 0., 1.);
+        return t * t * (3 - 2 * t);
+    };
+
+    for (int i = 0; i < n; i++){
+        std::cerr << i << std::endl;
+        double y = dist(gen);
+        double theta = 2.0 * M_PI * dist(gen);
+        double r = std::sqrt(1.0 - y * y);
+        vec3 light = vec3{r * std::cos(theta), y, r * std::sin(theta)} * 1.5;
+
+        std::cout << "v" << light << std::endl;
+        
         lookat(light, center, up);
+        ModelView[3][3] = norm(light - center);
+
         init_perspective(norm(eye - center));
         init_viewport(shadoww / 16, shadowh / 16, shadoww * 7 / 8, shadowh * 7 / 8);
         init_zbuffer(shadoww, shadowh);
@@ -149,7 +113,7 @@ int main(int argc, char** argv) {
         
         for (int m = 1; m < argc; m++) {
             Model model(argv[m]);
-            BlankShader shader{model};
+            Emptyshader shader{model};
             for (int f = 0; f < model.nfaces(); f++) {
                 Triangle clip = {shader.vertex(f, 0),
                                 shader.vertex(f, 1),
@@ -157,45 +121,53 @@ int main(int argc, char** argv) {
                 rasterize(clip, shader, trash);            
             }
         }
-        trash.write_tga_file("shadowmap.tga");
-    }
+        // trash.write_tga_file(std::string("shadowmap") + std::to_string(i) + std::string(".tga"));
 
-    drop_zbuffer("zbuffer2.tga", zbuffer, shadoww, shadowh);
+        mat<4,4> N = Viewport * Perspective * ModelView;
     
-    mat<4,4> N = Viewport * Perspective * ModelView;
-
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            vec4 fragment = M * vec4{static_cast<double>(x), static_cast<double>(y), zbuffer_copy[x + y * width], 1.};
-            vec4 q = N * fragment;
-            vec3 p = q.xyz() / q.w;
-            bool lit  = (fragment.z <- 100 ||
-                        (p.x < 0 || p.x >= shadoww || p.y < 0 || p.y >= shadowh) ||
-                        (p.z > zbuffer[int(p.x) + int(p.y) * shadoww] - .03));
-            mask[x + y *width] = lit;
+#pragma omp parallel for
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                vec4 fragment = M * vec4{static_cast<double>(x), static_cast<double>(y), zbuffer_copy[x + y * width], 1.};
+                vec4 q = N * fragment;
+                vec3 p = q.xyz() / q.w;
+                double lit  = (fragment.z <- 100 ||
+                            (p.x >= 0 && p.x < shadoww && p.y >= 0 && p.y < shadowh &&
+                            (p.z > zbuffer[int(p.x) + int(p.y) * shadoww] - .03)));
+                mask[x + y *width] += (lit - mask[x + y * width]) / (i + 1.);
+            }
         }
     }
 
-    TGAImage maskimg(width, height, TGAImage::GRAYSCALE);
+#pragma omp parallel for
     for (int x = 0; x < width; x++) {
         for (int y = 0; y < height; y++) {
-            if (mask[x + y * width]) continue;
-            maskimg.set(x, y, {255, 255, 255, 255});
-        }
-    }
-    maskimg.write_tga_file("mask.tga");
-
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            if (mask[x + y * width]) continue;
-            TGAColor c =  framebuffer.get(x, y);
-            vec3 a = {static_cast<double>(c[0]), static_cast<double>(c[1]), static_cast<double>(c[2])};
-            if (norm(a) < 80) continue;
-            a = normalized(a) * 80;
-            framebuffer.set(x, y, {static_cast<uint8_t>(a[0]), static_cast<uint8_t>(a[1]), static_cast<uint8_t>(a[2]), 255});
+            double m = smoothstep(-1, 1, mask[x + y * width]);
+            TGAColor c = framebuffer.get(x, y);
+            framebuffer.set(x, y, {static_cast<std::uint8_t>(c[0] * m), static_cast<std::uint8_t>(c[1] * m), static_cast<std::uint8_t>(c[2] * m), c[3]});
         }
     }
     framebuffer.write_tga_file("shadow.tga");
 
+    constexpr double threshold = .15;
+    for (int y = 1; y < framebuffer.height() - 1; y++) {
+        for (int x = 1; x < framebuffer.width() - 1; x++) {
+            vec2 sum;
+            for (int j = -1; j <= 1; j++) {
+                for (int i = -1; i <= 1; i++) {
+                    constexpr int Gx[3][3] = {{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
+                    constexpr int Gy[3][3] = {{-1, -2, -1}, {0, 0, 0}, {-1, 2, 1}};
+                    sum = sum + vec2{
+                        Gx[j + 1][i + 1] * zbuffer_copy[x + i + (y + j) * width],
+                        Gy[j + 1][i + 1] * zbuffer_copy[x + i + (y + j) * width]
+                    };
+                }
+            }
+            if (norm(sum) > threshold)
+                framebuffer.set(x, y, TGAColor{0, 0, 0, 255});
+        }
+    }
+    framebuffer.write_tga_file("edgs.tga");
+
     return 0;
-}
+}       

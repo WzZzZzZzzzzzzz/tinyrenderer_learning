@@ -80,14 +80,14 @@ bool Model::load(const std::string& filepath) {
             }
         }
     }
-    std::cout << "Loaded " << nverts() << " vertices and " << nfaces() << " faces." << std::endl;
+    // std::cout << "Loaded " << nverts() << " vertices and " << nfaces() << " faces." << std::endl;
 
     auto load_texture = [&filepath](const std::string suffix, TGAImage &img) {
         size_t dot = filepath.find_last_of(".");
         if (dot == std::string::npos) return;
         std::string texfile = filepath.substr(0, dot) + suffix;
         // std::cout << texfile << std::endl;
-        std::cerr << "texture file " << texfile << " loading " << (img.read_tga_file(texfile.c_str()) ? "ok" : "failed") << std::endl;
+        // std::cerr << "texture file " << texfile << " loading " << (img.read_tga_file(texfile.c_str()) ? "ok" : "failed") << std::endl;
     };
     load_texture("_diffuse.tga", diffusemap);
     load_texture("_nm_tangent.tga", normalmap);
