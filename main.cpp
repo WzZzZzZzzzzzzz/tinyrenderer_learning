@@ -10,18 +10,35 @@
 extern mat<4,4> Viewport, ModelView, Perspective;
 extern std::vector<double> zbuffer;
 
-struct Blankshader : IShader {
+struct ToonShader : IShader {
+    vec4 color;
     const Model &model;
+    vec4 l;
+    vec4 varying_nrm[3];
 
-    Blankshader(const Model &m) : model(m) {}
+    ToonShader(const vec4 color, const vec3 light, const Model &m) : color(color), model(m) {
+        l = normalized((ModelView * vec4{light.x, light.y, light.z, 0.}));
+    }
 
     virtual vec4 vertex(const int face, const int vert) {
+        varying_nrm[vert] = ModelView.invert_transpose() * model.normal(face, vert);
         vec4 gl_Position = ModelView * model.vert(face, vert);
         return Perspective * gl_Position;
     }
 
     virtual std::pair<bool, TGAColor> fragment(const vec3 bar) const {
-        TGAColor gl_FragColor = {255, 255, 255, 255};
+        vec4 n = normalized(varying_nrm[0] * bar[0] + varying_nrm[1] * bar[1] + varying_nrm[2] * bar[2]);
+
+        double diffuse = std::max(0., n * l);
+
+        double intensity = .15 + diffuse;
+        if (intensity > .66) intensity = 1;
+        else if (intensity > .33) intensity = .66;
+        else intensity = .33;
+
+        TGAColor gl_FragColor;
+        for (int channel : {0, 1, 2})
+            gl_FragColor[channel] = std::min<int>(255, color[channel] * intensity);
         return {false, gl_FragColor};
     }
 };
@@ -34,6 +51,7 @@ int main(int argc, char** argv) {
 
     constexpr int width  = 800;
     constexpr int height = 800;
+    constexpr vec3  light{1, 1, 1}; 
     constexpr vec3    eye{-1, 0, 2};
     constexpr vec3 center{0, 0, 0};
     constexpr vec3     up{0, 1, 0};
@@ -44,9 +62,12 @@ int main(int argc, char** argv) {
     init_zbuffer(width, height);
     TGAImage framebuffer(width, height, TGAImage::RGB, {177, 195, 209, 255});
 
+    constexpr vec4 color[] = {{22 * 4, 56 * 4, 147 * 4, 255},
+                            {123, 98, 88, 255}};
+
     for (int m = 1; m < argc; m++) {
         Model model(argv[m]);
-        Blankshader shader(model);
+        ToonShader shader(color[(m - 1) % 2], light, model);
         for (int f = 0; f < model.nfaces(); f++) {
             Triangle clip = {shader.vertex(f, 0),
                             shader.vertex(f, 1),
@@ -55,38 +76,24 @@ int main(int argc, char** argv) {
         }
     }
 
-    constexpr double ao_radius = .1;
-    constexpr int nsamples = 128;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> dist(-ao_radius, ao_radius);
-    auto smoothstep = [](double edge0, double edge1, double x) {
-        double  t = std::clamp((x - edge0) / (edge1 - edge0), 0., 1.);
-        return t * t * (3 - 2 * t);
-    };
-
-#pragma omp parallel for
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            double z = zbuffer[x + y * width];
-            if (z <- 100) continue;
-            vec4 fragment = Viewport.invert() * vec4{static_cast<double>(x), static_cast<double>(y), static_cast<double>(z), 1.};
-            double vote = 0;
-            double voters = 0;
-            for (int i = 0; i < nsamples; i++) {
-                vec4 p = Viewport * (fragment + vec4{dist(gen), dist(gen), dist(gen), 0.});
-                if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) continue;
-                double d = zbuffer[int(p.x) + int(p.y) * width];
-                if (z + 5 * ao_radius < d) continue;
-                voters++;
-                vote += d > p.z;
+    constexpr double threshold = .15;
+    for (int y = 1; y < framebuffer.height() - 1; ++y) {
+        for (int x = 1; x < framebuffer.width() - 1; ++x) {
+            vec2 sum;
+            for (int j = -1; j <= 1; ++j) {
+                for (int i = -1; i <= 1; ++i) {
+                    constexpr int Gx[3][3] = {{-1, 0, 1},{-2, 0, 2}, {-1, 0, 1}};
+                    constexpr int Gy[3][3] = {{-1, -2, -1},{0, 0, 0}, {1, 2, 1}};
+                    sum = sum + vec2{
+                        Gx[j + 1][i + 1] * zbuffer[x + i + (y + j) * width],
+                        Gy[j + 1][i + 1] * zbuffer[x + i + (y + j) * width]
+                    };
+                }
             }
-            double ssao = smoothstep(0, 1, 1 - vote / voters * .4);
-            TGAColor c = framebuffer.get(x, y);
-            framebuffer.set(x, y, {static_cast<uint8_t>(c[0] * ssao), static_cast<uint8_t>(c[1] * ssao), static_cast<uint8_t>(c[2] * ssao), c[3]});
+            if (norm(sum) > threshold)
+                framebuffer.set(x, y, TGAColor{0, 0, 0, 255});
         }
     }
     framebuffer.write_tga_file("framebuffer.tga");
-
     return 0;
 }       
